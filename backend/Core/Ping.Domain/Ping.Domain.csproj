@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>Ping.Domain</AssemblyName>
+    <RootNamespace>Ping.Domain</RootNamespace>
+  </PropertyGroup>
+
+</Project>

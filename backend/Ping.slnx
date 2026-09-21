@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/Core/">
+    <Project Path="Core/Ping.Application/Ping.Application.csproj" />
+    <Project Path="Core/Ping.Domain/Ping.Domain.csproj" />
+    <Project Path="Core/Ping.Infrastructure/Ping.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/Hosts/">
+    <Project Path="Hosts/Ping.Api/Ping.Api.csproj" />
+  </Folder>
+</Solution>

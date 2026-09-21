@@ -1,0 +1,35 @@
+# .NET
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.userosscache
+.vs/
+
+# Rider / VS
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Node / frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Environment files (backend/deploy/.env, frontend/.env.local, ...)
+.env
+.env.*
+*.env
+!.env.example
+!.env.prod.example
+
+# Deploy secrets and runtime state
+deploy/keys/
+deploy/secrets/
+
+# Claude Code local settings
+.claude/settings.local.json
