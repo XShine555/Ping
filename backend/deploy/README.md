@@ -1,20 +1,21 @@
-# Ping — deploy
+# Ping deploy
 
-Reuses the Zitadel and SeaweedFS containers already running for Musify instead of starting new
-ones. Musify's stack must be up first.
+Reuses the Zitadel and SeaweedFS instances already running in the separate
+`Infrastructure` repository, instead of starting new ones. That stack must be
+up first (see its own README for the exact command).
 
 ```bash
 cp deploy/.env.example deploy/.env
-# edit deploy/.env:
-#   - ZITADEL_ADMIN_PAT_DIR must point at Musify's deploy/zitadel/.output folder
-#   - S3_ACCESS_KEY / S3_SECRET_KEY must match the REAL values in Musify's own deploy/.env
+# edit deploy/.env if your Infrastructure checkout isn't where
+# ZITADEL_ADMIN_PAT_DIR assumes, or if its S3_ACCESS_KEY/SECRET_KEY differ
+# from the defaults
 
 docker compose -f deploy/compose.yml -f deploy/compose.dev.yml up -d
 ```
 
-This starts Postgres, LiveKit, and the one-shot jobs (EF Core migrations, the Zitadel
-project/apps for Ping, the `ping-storage` S3 bucket) — the usual dev loop runs the API and
-frontend from the IDE against these.
+This starts LiveKit and the one-shot jobs (waiting for Postgres, EF Core
+migrations, the Zitadel project for Ping, the `ping-storage` S3 bucket). The
+usual dev loop runs the API and frontend from the IDE against these.
 
 To also build and run the API/frontend in Docker instead:
 
@@ -22,8 +23,9 @@ To also build and run the API/frontend in Docker instead:
 docker compose -f deploy/compose.yml -f deploy/compose.dev.yml --profile apps up -d --build
 ```
 
-By then `zitadel-init` has already written `AUTH_CLIENT_ID` / `WEB_CLIENT_ID` into `deploy/.env`.
+By then `zitadel-init` has already written `AUTH_CLIENT_ID` / `WEB_CLIENT_ID`
+into `deploy/.env`.
 
-Ports (dev): API `5211`, web `3100`, Postgres `59010`, LiveKit `7880` (signaling) / `7881` (RTC
-TCP) / `50000-50100/udp` (media). Zitadel (`8080`) and the SeaweedFS S3 API (`8333`) come from
-Musify's own stack.
+Ports (dev): API `5211`, web `3100`, LiveKit `7880` (signaling), `7881` (RTC
+TCP) and `50000-50100/udp` (media). Postgres, Zitadel and the SeaweedFS S3 API
+come from Infrastructure's own stack. See its README for that port table.

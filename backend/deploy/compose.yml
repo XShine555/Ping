@@ -1,25 +1,22 @@
-# Ping — base stack, shared by development and production.
+# Ping: base stack, shared by development and production.
 #
-# This intentionally does NOT run Zitadel or SeaweedFS: Ping reuses the same instances
-# already running for Musify (see deploy/.env.example — ZITADEL_ADMIN_PAT_DIR / S3_*).
-# Bring Musify's stack up first, then this one.
+# Zitadel and SeaweedFS are NOT run here: Ping reuses the shared instances in
+# ../../../Infrastructure (see .env.example, ZITADEL_ADMIN_PAT_DIR / S3_*).
+# Bring that stack up first.
 #
 #   dev   docker compose -f deploy/compose.yml -f deploy/compose.dev.yml up -d
 #
-# The `api` and `web` services sit behind the `apps` profile, so a plain `up` starts
-# Postgres, LiveKit and the one-shot bootstrap jobs (migrations, Zitadel project/apps,
-# SeaweedFS bucket) and stops there — the usual dev setup, with the apps running from the
-# IDE. Add `--profile apps up -d --build` as a SECOND command to also build and run them in
-# Docker: by then zitadel-init has already written the OIDC client ids into the env file.
-
-x-app-depends: &app-depends
-  postgres:
-    condition: service_healthy
+# The `api` and `web` services sit behind the `apps` profile, so a plain `up`
+# starts LiveKit and the one-shot bootstrap jobs (Postgres wait, migrations,
+# Zitadel project/apps, SeaweedFS bucket) and stops there. That's the usual
+# dev setup, with the apps running from the IDE. Add `--profile apps up -d
+# --build` as a SECOND command to also build and run them in Docker: by then
+# zitadel-init has already written the OIDC client ids into the env file.
 
 x-backend-env: &backend-env
-  Database__ConnectionString: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
-  # The public S3 URL, not the internal one: the same address is used to sign the
-  # presigned upload/download URLs the browser has to be able to reach.
+  Database__ConnectionString: "Host=${POSTGRES_HOST};Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+  # The public S3 URL, not the internal one: the same address is used to sign
+  # the presigned upload/download URLs the browser has to be able to reach.
   InfrastructureStorage__Address: ${S3_PUBLIC_URL}
   InfrastructureStorage__AccessKey: ${S3_ACCESS_KEY}
   InfrastructureStorage__SecretAccessKey: ${S3_SECRET_KEY}
@@ -29,22 +26,6 @@ x-backend-env: &backend-env
 
 services:
   # --- Infrastructure -------------------------------------------------------
-
-  postgres:
-    image: postgres:17-alpine
-    container_name: ping-postgres
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
 
   # Voice/video SFU. --dev keeps it single-node with in-memory state (fine for local
   # development), but the key pair is overridden via LIVEKIT_KEYS: the LiveKit .NET server SDK
@@ -56,18 +37,36 @@ services:
     environment:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
       # Node IP is "automatically determined" by default, which inside a container means the
-      # Docker bridge network's internal address (e.g. 172.x.x.x) — unreachable from the
+      # Docker bridge network's internal address (e.g. 172.x.x.x), unreachable from the
       # browser, so ICE/media never connects even though the WebSocket signaling (which goes
       # through the published port, not this address) succeeds. Every public URL in this dev
       # stack is already hardcoded to localhost (see PUBLIC_WEB_URL, VITE_LIVEKIT_URL), so the
-      # browser and this container are always on the same machine — advertise that directly.
+      # browser and this container are always on the same machine. Advertise that directly.
       NODE_IP: 127.0.0.1
     restart: unless-stopped
 
-  # One-shot: creates the Ping project and its two OIDC apps in Musify's Zitadel instance
-  # (or reuses them if they already exist), then writes AUTH_CLIENT_ID / WEB_CLIENT_ID back
-  # into the env file mounted at /workspace/.env — so a later `--profile apps up` picks up
-  # real values instead of empty ones. Both apps are public clients (PKCE, no secret): the
+  # Waits for Infrastructure's Postgres to accept connections before `migrate`
+  # runs. A cross-compose-project health check isn't possible, since
+  # Postgres is no longer part of this compose file.
+  wait-for-postgres:
+    image: postgres:17-alpine
+    container_name: ping-wait-for-postgres
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        deadline=$$(( $$(date +%s) + 60 ))
+        until pg_isready -h ${POSTGRES_HOST} -p 5432 -U ${POSTGRES_USER} >/dev/null 2>&1; do
+          [ "$$(date +%s)" -lt "$$deadline" ] || { echo "postgres did not respond at ${POSTGRES_HOST}:5432. Is Infrastructure running?" >&2; exit 1; }
+          sleep 2
+        done
+    restart: "no"
+
+  # One-shot: creates the Ping project and its two OIDC apps in the shared
+  # Zitadel (or reuses them if they already exist), then writes
+  # AUTH_CLIENT_ID / WEB_CLIENT_ID back into the env file mounted at
+  # /workspace/.env, so a later `--profile apps up` picks up real values
+  # instead of empty ones. Both apps are public clients (PKCE, no secret): the
   # Scalar docs UI and the React SPA.
   zitadel-init:
     image: alpine:3.20
@@ -101,7 +100,7 @@ services:
         }
 
         if [ ! -f /zitadel-output/admin-sa.pat ]; then
-          echo "admin-sa.pat not found under ZITADEL_ADMIN_PAT_DIR — is Musify's Zitadel running?" >&2
+          echo "admin-sa.pat not found under ZITADEL_ADMIN_PAT_DIR. Is Infrastructure's Zitadel running?" >&2
           exit 1
         fi
         PAT=$$(tr -d '\r\n' </zitadel-output/admin-sa.pat)
@@ -160,7 +159,7 @@ services:
           echo "  created (clientId $$API_CLIENT_ID)"
         fi
 
-        echo "==> web app (React SPA — public client, PKCE)"
+        echo "==> web app (React SPA, public client, PKCE)"
         WEB_APP_NAME="Ping Web"
         WEB_APP_ID=$$(find_app "$$WEB_APP_NAME")
         if [ -n "$$WEB_APP_ID" ]; then
@@ -190,8 +189,9 @@ services:
         echo "==> wired into $$ENV_FILE"
     restart: "no"
 
-  # One-shot: SeaweedFS does not auto-create buckets. Reuses Musify's SeaweedFS instance
-  # (same S3 endpoint/credentials) but creates Ping's own, separate bucket.
+  # One-shot: SeaweedFS does not auto-create buckets. Reuses the shared
+  # SeaweedFS instance (same S3 endpoint/credentials) but creates Ping's own,
+  # separate bucket. `aws s3 ls` doubles as the readiness probe.
   seaweedfs-init:
     image: amazon/aws-cli:latest
     container_name: ping-seaweedfs-init
@@ -202,6 +202,12 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
+        set -e
+        deadline=$$(( $$(date +%s) + 60 ))
+        until aws --endpoint-url ${S3_PUBLIC_URL} s3 ls >/dev/null 2>&1; do
+          [ "$$(date +%s)" -lt "$$deadline" ] || { echo "seaweedfs did not respond at ${S3_PUBLIC_URL}. Is Infrastructure running?" >&2; exit 1; }
+          sleep 2
+        done
         aws --endpoint-url ${S3_PUBLIC_URL} s3 mb s3://${S3_BUCKET} 2>/dev/null || true
         aws --endpoint-url ${S3_PUBLIC_URL} s3 ls
     restart: "no"
@@ -213,10 +219,10 @@ services:
       dockerfile: Ping.Migrator.Dockerfile
     container_name: ping-migrate
     depends_on:
-      postgres:
-        condition: service_healthy
+      wait-for-postgres:
+        condition: service_completed_successfully
     environment:
-      Database__ConnectionString: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Database__ConnectionString: "Host=${POSTGRES_HOST};Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
     restart: "no"
 
   # --- Applications (profile: apps) -----------------------------------------
@@ -228,7 +234,6 @@ services:
       dockerfile: Ping.Api.Dockerfile
     container_name: ping-api
     depends_on:
-      <<: *app-depends
       migrate:
         condition: service_completed_successfully
     environment:
@@ -266,6 +271,3 @@ services:
     depends_on:
       - api
     restart: unless-stopped
-
-volumes:
-  postgres_data:

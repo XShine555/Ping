@@ -21,8 +21,8 @@ A Discord style chat app. Servers with text and voice channels, direct messages,
 - SignalR for chat, presence and call signaling (ringing, accepting, hanging up).
 - LiveKit's server SDK issues the access tokens clients use to join a voice/video room.
 - FluentValidation on the request DTOs, wired in through a minimal API filter.
-- Storage goes through an S3 compatible bucket, reusing the SeaweedFS instance from the Musify stack instead of running a second one.
-- Zitadel for OIDC/OAuth2 login, also shared with Musify so a single account works across both apps.
+- Storage goes through an S3 compatible bucket, reusing the shared SeaweedFS instance from the Infrastructure stack instead of running a second one.
+- Zitadel for OIDC/OAuth2 login, also shared through Infrastructure so a single account works across every project.
 
 **Frontend**: React 19 with TypeScript, built with Vite.
 - Zustand for the small bits of client state: current view, active call, toasts, presence.
@@ -31,7 +31,10 @@ A Discord style chat app. Servers with text and voice channels, direct messages,
 - `@livekit/components-react` plus `livekit-client` for the actual call UI and media handling.
 - Plain CSS, no component library.
 
-**Infrastructure**: Docker Compose for local development. Postgres and LiveKit run in containers; Zitadel and the S3 storage are the ones already running for Musify, so this stack only adds what's specific to Ping.
+**Infrastructure**: Docker Compose for local development. LiveKit runs in a
+container here; Postgres, Zitadel and the S3 storage are shared services
+provided by the separate `Infrastructure` git repository, used by other
+projects too, so this stack only adds what's specific to Ping.
 
 ## Project layout
 
@@ -43,13 +46,22 @@ backend/deploy/   Compose files and env templates for local development
 
 ## Running it locally
 
-The backend expects Musify's Zitadel and SeaweedFS containers to already be running, since it reuses them instead of standing up its own copy. With that in place:
+The backend expects the shared `Infrastructure` stack to already be running
+(see its own README for the exact command), since it reuses its
+Postgres/Zitadel/SeaweedFS instead of standing up its own copies. With that
+in place:
 
 ```bash
 cp backend/deploy/.env.example backend/deploy/.env
-# edit backend/deploy/.env to point at your Musify checkout and fill in the real S3 keys
+# edit backend/deploy/.env if your Infrastructure checkout isn't where
+# ZITADEL_ADMIN_PAT_DIR assumes, or its S3 keys differ from the defaults
 
 docker compose -f backend/deploy/compose.yml -f backend/deploy/compose.dev.yml up -d
 ```
 
-That starts Postgres, LiveKit and the one-shot setup jobs (migrations, the Zitadel project for Ping, the storage bucket). From there, run the API and the frontend from your IDE or with `dotnet run` / `npm run dev` against them. See [backend/deploy/README.md](backend/deploy/README.md) for the full details, including how to also build and run the API and frontend inside Docker.
+That starts LiveKit and the one-shot setup jobs (waiting for Postgres,
+migrations, the Zitadel project for Ping, the storage bucket). From there,
+run the API and the frontend from your IDE or with `dotnet run` / `npm run
+dev` against them. See [backend/deploy/README.md](backend/deploy/README.md)
+for the full details, including how to also build and run the API and
+frontend inside Docker.

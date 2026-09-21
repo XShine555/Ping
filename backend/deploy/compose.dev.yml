@@ -1,6 +1,6 @@
 name: ping-dev
 
-# Development overlay: publishes the infrastructure ports to the host so the .NET apps and
+# Development overlay: publishes the ports to the host so the .NET apps and
 # the web frontend can run from the IDE.
 #
 #   docker compose -f deploy/compose.yml -f deploy/compose.dev.yml up -d
@@ -10,15 +10,14 @@ x-host-alias: &host-alias
   - "host.docker.internal:host-gateway"
 
 services:
-  postgres:
-    ports:
-      - "${POSTGRES_HOST_PORT}:5432"
-
   livekit:
     ports:
       - "7880:7880" # HTTP / WebSocket signaling
       - "7881:7881" # RTC TCP fallback
       - "50000-50100:50000-50100/udp" # WebRTC media
+
+  wait-for-postgres:
+    extra_hosts: *host-alias
 
   zitadel-init:
     extra_hosts: *host-alias
@@ -26,6 +25,9 @@ services:
       - ./.env:/workspace/.env
 
   seaweedfs-init:
+    extra_hosts: *host-alias
+
+  migrate:
     extra_hosts: *host-alias
 
   api:
