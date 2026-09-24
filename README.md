@@ -54,7 +54,7 @@ in place:
 ```bash
 cp backend/deploy/.env.example backend/deploy/.env
 # edit backend/deploy/.env if your Infrastructure checkout isn't where
-# ZITADEL_ADMIN_PAT_DIR assumes, or its S3 keys differ from the defaults
+# ZITADEL_PAT_DIR assumes, or its PING_* credentials differ from the defaults
 
 docker compose -f backend/deploy/compose.yml -f backend/deploy/compose.dev.yml up -d
 ```
