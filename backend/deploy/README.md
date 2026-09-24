@@ -7,8 +7,8 @@ up first (see its own README for the exact command).
 ```bash
 cp deploy/.env.example deploy/.env
 # edit deploy/.env if your Infrastructure checkout isn't where
-# ZITADEL_ADMIN_PAT_DIR assumes, or if its S3_ACCESS_KEY/SECRET_KEY differ
-# from the defaults
+# ZITADEL_PAT_DIR assumes, or if its PING_* credentials differ from the
+# defaults
 
 docker compose -f deploy/compose.yml -f deploy/compose.dev.yml up -d
 ```

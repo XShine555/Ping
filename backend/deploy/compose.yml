@@ -1,7 +1,8 @@
 # Ping: base stack, shared by development and production.
 #
 # Zitadel and SeaweedFS are NOT run here: Ping reuses the shared instances in
-# ../../../Infrastructure (see .env.example, ZITADEL_ADMIN_PAT_DIR / S3_*).
+# ../../../Infrastructure (see .env.example, ZITADEL_PAT_DIR / S3_*), with
+# Ping's own credentials on each (provisioned there).
 # Bring that stack up first.
 #
 #   dev   docker compose -f deploy/compose.yml -f deploy/compose.dev.yml up -d
@@ -72,7 +73,7 @@ services:
     image: alpine:3.20
     container_name: ping-zitadel-init
     volumes:
-      - ${ZITADEL_ADMIN_PAT_DIR}:/zitadel-output:ro
+      - ${ZITADEL_PAT_DIR}:/zitadel-output:ro
       - ./.env:/workspace/.env
     environment:
       PUBLIC_AUTH_URL: ${PUBLIC_AUTH_URL}
@@ -99,11 +100,14 @@ services:
           fi
         }
 
-        if [ ! -f /zitadel-output/admin-sa.pat ]; then
-          echo "admin-sa.pat not found under ZITADEL_ADMIN_PAT_DIR. Is Infrastructure's Zitadel running?" >&2
-          exit 1
-        fi
-        PAT=$$(tr -d '\r\n' </zitadel-output/admin-sa.pat)
+        # Ping's own service account, owner of the Ping project only
+        # (created by Infrastructure's `provision`, see its README).
+        deadline=$$(( $$(date +%s) + 180 ))
+        while [ ! -s /zitadel-output/zitadel.pat ]; do
+          [ "$$(date +%s)" -lt "$$deadline" ] || { echo "no zitadel.pat in ZITADEL_PAT_DIR. Is Infrastructure up, and does ZITADEL_PAT_DIR point at its zitadel/.output/ping? Check 'docker logs infra-provision'." >&2; exit 1; }
+          sleep 3
+        done
+        PAT=$$(tr -d '\r\n' </zitadel-output/zitadel.pat)
         MGMT="$$PUBLIC_AUTH_URL/management/v1"
 
         echo "==> waiting for Zitadel to answer at $$PUBLIC_AUTH_URL"
@@ -124,13 +128,11 @@ services:
 
         echo "==> project"
         PROJECT_NAME=Ping
+        # Created by Infrastructure's `provision`: this account can't create
+        # projects, only manage this one.
         PROJECT_ID=$$(api_call POST /projects/_search "$$(name_query "$$PROJECT_NAME")" | jq -r --arg n "$$PROJECT_NAME" '.result // [] | map(select(.name==$$n)) | first | .id // empty')
-        if [ -z "$$PROJECT_ID" ]; then
-          PROJECT_ID=$$(api_call POST /projects "$$(printf '{"name":"%s"}' "$$PROJECT_NAME")" | jq -r '.id')
-          echo "  created (id $$PROJECT_ID)"
-        else
-          echo "  reused (id $$PROJECT_ID)"
-        fi
+        [ -n "$$PROJECT_ID" ] || { echo "Zitadel project $$PROJECT_NAME not found. Is ping in Infrastructure's x-projects?" >&2; exit 1; }
+        echo "  found (id $$PROJECT_ID)"
 
         find_app() { api_call POST "/projects/$$PROJECT_ID/apps/_search" "$$(name_query "$$1")" | jq -r --arg n "$$1" '.result // [] | map(select(.name==$$n)) | first | .id // empty'; }
 
